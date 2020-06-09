@@ -1,6 +1,6 @@
-const BAL_TOKEN = '0xba100000625a3754423978a60c9317c58a424e3D';
+export const BAL_TOKEN = '0xba100000625a3754423978a60c9317c58a424e3D';
 
-const uncappedTokens = [
+export const uncappedTokens = [
     '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
     '0x6B175474E89094C44Da98b954EedeAC495271d0F', // DAI
     '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // USDC
@@ -8,7 +8,7 @@ const uncappedTokens = [
     '0xba100000625a3754423978a60c9317c58a424e3D', // BAL
 ];
 
-const equivalentSets = [
+export const equivalentSets = [
     [
         [
             '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', // WETH
@@ -174,8 +174,5 @@ const equivalentSets = [
     ],
 ];
 
-module.exports = {
-    BAL_TOKEN,
-    uncappedTokens,
-    equivalentSets,
-};
+export const REP_TOKEN = '0x1985365e9f78359a9B6AD760e32412f4a445E862';
+export const REP_TOKEN_V2 = '0x221657776846890989a759BA2973e427DfF5C9bB';
