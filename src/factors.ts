@@ -1,4 +1,5 @@
 import { BAL_TOKEN, uncappedTokens, equivalentSets } from './tokens';
+import { BigNumber } from 'bignumber.js';
 const { bnum } = require('./utils');
 
 const WRAP_FACTOR_HARD = 0.1;
@@ -10,11 +11,11 @@ export function getFeeFactor(feePercentage) {
 
 // higher when greater proportion of BAL
 export function getStakingBoostOfPair(
-    balMultiplier,
-    token1,
-    weight1,
-    token2,
-    weight2
+    balMultiplier: BigNumber,
+    token1: string,
+    weight1: BigNumber,
+    token2: string,
+    weight2: BigNumber
 ) {
     if (token1 == BAL_TOKEN && uncappedTokens.includes(token2)) {
         return balMultiplier

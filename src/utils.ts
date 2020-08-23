@@ -52,7 +52,7 @@ export async function fetchTokenPrices(
 ) {
     let prices = {};
 
-    for (let tokenAddress of allTokens) {
+    for (let tokenAddress of Object.keys(allTokens)) {
         const address = tokenAddress
             ? web3.utils.toChecksumAddress(tokenAddress)
             : null;

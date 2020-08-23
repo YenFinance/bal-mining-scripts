@@ -1,5 +1,10 @@
 const { expect, assert } = require('chai');
-const { getRewardsAtBlock, getNewBalMultiplier } = require('../lib/blockData');
+const {
+    getPoolDataAtBlock,
+    processPoolData,
+    sumUserLiquidity,
+    getNewBalMultiplier,
+} = require('../lib/blockData');
 const { bnum } = require('../lib/utils');
 const { mockWeb3, mockPrices, mockBlock, mockPool } = require('./mocks');
 const cliProgress = require('cli-progress');
@@ -9,7 +14,7 @@ const mockPoolProgress = {
     increment: () => {},
 };
 
-describe('getBlockData', () => {
+describe('getPoolDataAtBlock', () => {
     let tokenAddress = mockWeb3.utils.toChecksumAddress(
         '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
     );
@@ -22,16 +27,28 @@ describe('getBlockData', () => {
     };
 
     it('should return a blockData object', async () => {
-        let result = await getRewardsAtBlock(
+        const poolData = await getPoolDataAtBlock(
             mockWeb3,
             mockBlock.number,
-            bnum(1000),
             [mockPool],
             mockPrices,
             mockTokenDecimals,
             mockPoolProgress
         );
+
+        const {
+            tokenTotalLiquidities,
+            finalPoolsWithBalMultiplier,
+        } = processPoolData(poolData);
+
+        assert.deepEqual(
+            tokenTotalLiquidities[tokenAddress].toNumber(),
+            22999.5,
+            'should return token total market caps'
+        );
+
         let userAddress = '0x59a068cc4540c8b8f8ff808ed37fae06584be019';
+
         let expectedUserPool = {
             factorUSD: '11499.75',
             feeFactor: '1',
@@ -41,22 +58,22 @@ describe('getBlockData', () => {
             wrapFactor: '1',
         };
 
+        const { userPools, userBalReceived } = sumUserLiquidity(
+            tokenTotalLiquidities,
+            finalPoolsWithBalMultiplier,
+            bnum('1000')
+        );
+
         assert.deepEqual(
-            result[0][userAddress],
+            userPools[userAddress],
             [expectedUserPool],
             'should return user pools'
         );
 
         assert.deepEqual(
-            result[1][userAddress].toNumber(),
+            userBalReceived[userAddress].toNumber(),
             250,
             'should return user bal received'
-        );
-
-        assert.deepEqual(
-            result[2][tokenAddress].toNumber(),
-            22999.5,
-            'should return token total market caps'
         );
     });
 });

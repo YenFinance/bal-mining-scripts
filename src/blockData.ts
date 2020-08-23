@@ -37,7 +37,7 @@ export function getNewBalMultiplier(
     let desiredLiquidityIncrease = finalLiquidity.minus(liquidityPreStaking);
     let tempLiquidityIncrease = tempLiquidity.minus(liquidityPreStaking);
 
-    // edge case if the liquidity wasn't increased (no eligible pools)
+    // edge case if the liquidity was not increased (no eligible pools)
     if (tempLiquidityIncrease.toNumber() == 0) {
         return tempBalMultiplier;
     }
@@ -74,28 +74,20 @@ export function sumLiquidities(pools): { [address: string]: BigNumber } {
     }, {});
 }
 
-export async function getRewardsAtBlock(
+export async function getPoolDataAtBlock(
     web3,
     blockNum,
-    bal_per_snapshot,
     pools,
     prices,
     tokenDecimals,
     poolProgress
 ) {
-    poolProgress.update(0, { task: `Block ${blockNum} Progress - Pre` });
     let block = await web3.eth.getBlock(blockNum);
 
     // All the pools that will be included in the calculation
     let allPoolData: PoolData[] = [];
     // multiple derivative pools per real pool that are subdivided by whether
     // they contain BAL held by non-shareholders and shareholders
-
-    // All the pools the user was involved with in the block
-    let userPools: { [userAddress: string]: UserPoolData[] } = {};
-
-    // The total liquidity each user contributed in the block
-    let userLiquidity: { [userAddress: string]: BigNumber } = {};
 
     // Gather data on all eligible pools
     for (const pool of pools) {
@@ -121,13 +113,14 @@ export async function getRewardsAtBlock(
 
         allPoolData = allPoolData.concat(poolData.pools);
     }
+    return allPoolData;
+}
 
-    poolProgress.update(0, { task: `Block ${blockNum} Progress - Post` });
-
+export function processPoolData(poolData) {
     //////////////////////////////////////////////////////////////////
     // FIRST PASS - calculate variant data with balMultiplier = 1
     //////////////////////////////////////////////////////////////////
-    let firstPassPools = allPoolData.map((p) => {
+    let firstPassPools = poolData.map((p) => {
         const variantFactors = getPoolVariantData(p, bnum(1.0));
         return { ...p, ...variantFactors };
     });
@@ -154,12 +147,12 @@ export async function getRewardsAtBlock(
     //////////////////////////////////////////////////////////////////
     // SECOND PASS
     //////////////////////////////////////////////////////////////////
-    let secondPassPools = allPoolData.map((p) => {
+    let secondPassPools = poolData.map((p) => {
         const variantFactors = getPoolVariantData(p, bnum(1.0));
         return { ...p, ...variantFactors };
     });
 
-    let secondPassPoolsWithBalMultiplier = allPoolData.map((p) => {
+    let secondPassPoolsWithBalMultiplier = poolData.map((p) => {
         let balMultiplier = p.canReceiveBoost ? TEMP_BAL_MULTIPLIER : bnum(1.0);
         const variantFactors = getPoolVariantData(p, balMultiplier);
         return { ...p, ...variantFactors };
@@ -183,25 +176,40 @@ export async function getRewardsAtBlock(
         totalBalancerLiquidityTemp,
         TEMP_BAL_MULTIPLIER
     );
+    console.log('\nNEW BAL MULTIPLIER:', newBalMultiplier.toNumber(), '\n');
 
     //////////////////////////////////////////////////////////////////
     // FINAL PASS
     //////////////////////////////////////////////////////////////////
 
-    let finalPassPoolsWithBalMultiplier = allPoolData.map((p) => {
+    let finalPoolsWithBalMultiplier = poolData.map((p) => {
         let balMultiplier = p.canReceiveBoost ? newBalMultiplier : bnum(1.0);
         const variantFactors = getPoolVariantData(p, balMultiplier);
         return { ...p, ...variantFactors };
     });
+    return { tokenTotalLiquidities, finalPoolsWithBalMultiplier };
+}
 
+export function sumUserLiquidity(
+    tokenTotalLiquidities,
+    pools,
+    bal_per_snapshot
+) {
     // assert that the final liquidity is gives a "boost" of 1 in the stakingBoost function when this val is passed as totalBalancerLiquidityTemp
     // targetFinalBalancerLiquidity == finalLiquidity
-    let finalBalancerLiquidity = Object.values(
-        sumLiquidities(finalPassPoolsWithBalMultiplier)
-    ).reduce((sum, liquidity) => sum.plus(liquidity), bnum(0));
+    const finalBalancerLiquidity = Object.values(sumLiquidities(pools)).reduce(
+        (sum, liquidity) => sum.plus(liquidity),
+        bnum(0)
+    );
+
+    // All the pools the user was involved with in the block
+    let userPools: { [userAddress: string]: UserPoolData[] } = {};
+
+    // The total liquidity each user contributed in the block
+    let userLiquidity: { [userAddress: string]: BigNumber } = {};
 
     // Adjust pool liquidity
-    for (const poolData of finalPassPoolsWithBalMultiplier) {
+    for (const poolData of pools) {
         const { bptSupply } = poolData;
 
         // Aggregate an adjusted liquidity of the pool
@@ -230,34 +238,35 @@ export async function getRewardsAtBlock(
                 factorUSD: finalPoolLiquidityFactor.toString(),
             };
 
-            if (userPools[poolData.controller]) {
-                userPools[poolData.controller].push(privatePool);
+            const lp = poolData.controller;
+            if (userPools[lp]) {
+                userPools[lp].push(privatePool);
             } else {
-                userPools[poolData.controller] = [privatePool];
+                userPools[lp] = [privatePool];
             }
 
             // Add this pool liquidity to total user liquidity
-            if (userLiquidity[poolData.controller]) {
-                userLiquidity[poolData.controller] = userLiquidity[
-                    poolData.controller
-                ].plus(finalPoolLiquidityFactor);
+            if (userLiquidity[lp]) {
+                userLiquidity[lp] = userLiquidity[lp].plus(
+                    finalPoolLiquidityFactor
+                );
             } else {
-                userLiquidity[poolData.controller] = finalPoolLiquidityFactor;
+                userLiquidity[lp] = finalPoolLiquidityFactor;
             }
         } else {
             // Shared pool
 
             for (const i in poolData.liquidityProviders) {
-                let holder = poolData.liquidityProviders[i];
+                let lp = poolData.liquidityProviders[i];
                 let userBalance = poolData.lpBalances[i];
 
                 // the value of the user's share of the pool's liquidity
-                let userPoolValue = userBalance
+                let lpPoolValue = userBalance
                     .div(bptSupply)
                     .times(finalPoolLiquidity)
                     .dp(18);
 
-                let userPoolValueFactor = userBalance
+                let lpPoolValueFactor = userBalance
                     .div(bptSupply)
                     .times(finalPoolLiquidityFactor)
                     .dp(18);
@@ -267,23 +276,21 @@ export async function getRewardsAtBlock(
                     feeFactor: poolData.feeFactor.toString(),
                     balAndRatioFactor: poolData.balAndRatioFactor.toString(),
                     wrapFactor: poolData.wrapFactor.toString(),
-                    valueUSD: userPoolValue.toString(),
-                    factorUSD: userPoolValueFactor.toString(),
+                    valueUSD: lpPoolValue.toString(),
+                    factorUSD: lpPoolValueFactor.toString(),
                 };
-                if (userPools[holder]) {
-                    userPools[holder].push(sharedPool);
+                if (userPools[lp]) {
+                    userPools[lp].push(sharedPool);
                 } else {
-                    userPools[holder] = [sharedPool];
+                    userPools[lp] = [sharedPool];
                 }
 
                 // Add this pool's liquidity to the user's total liquidity
-                userLiquidity[holder] = (userLiquidity[holder] || bnum(0)).plus(
-                    userPoolValueFactor
+                userLiquidity[lp] = (userLiquidity[lp] || bnum(0)).plus(
+                    lpPoolValueFactor
                 );
             }
         }
-
-        poolProgress.increment(1);
     }
 
     // Final iteration across all users to calculate their BAL tokens for this block
@@ -294,5 +301,5 @@ export async function getRewardsAtBlock(
             .div(finalBalancerLiquidity);
     }
 
-    return [userPools, userBalReceived, tokenTotalLiquidities];
+    return { userPools, userBalReceived };
 }

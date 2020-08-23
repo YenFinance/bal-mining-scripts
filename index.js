@@ -7,8 +7,12 @@ const { fetchAllPools } = require('./lib/subgraph');
 const poolAbi = require('./abi/BPool.json');
 const tokenAbi = require('./abi/BToken.json');
 
-const { getRewardsAtBlock } = require('./lib/blockData');
-const { REP_TOKEN, REP_TOKEN_V2 } = require('./lib/tokens');
+const {
+    getPoolDataAtBlock,
+    processPoolData,
+    sumUserLiquidity,
+} = require('./lib/blockData');
+const { REP_TOKEN, REP_TOKEN_V2, BAL_TOKEN } = require('./lib/tokens');
 const {
     ensureDirectoryExists,
     pricesAvailable,
@@ -81,6 +85,10 @@ const BAL_PER_SNAPSHOT = BAL_PER_WEEK.div(bnum(NUM_SNAPSHOTS)); // Ceiling becau
     // fetch the pools existing at the last block
     let pools = await fetchAllPools(END_BLOCK);
     writePools(WEEK, pools);
+    //pools = pools.filter(p =>
+    //p.tokensList.includes(BAL_TOKEN) ||
+    //p.tokensList.includes('0xba100000625a3754423978a60c9317c58a424e3d')
+    //)
 
     // gather all the decimals of the tokens in the pools
     // assuming these don't change
@@ -118,40 +126,54 @@ const BAL_PER_SNAPSHOT = BAL_PER_WEEK.div(bnum(NUM_SNAPSHOTS)); // Ceiling becau
 
         writePrices(WEEK, prices);
     }
-
-    const poolProgress = multibar.create(pools.length, 0, {
-        task: 'Block Progress',
-    });
     const blockProgress = multibar.create(NUM_SNAPSHOTS, 0, {
         task: 'Overall Progress',
     });
 
     // loop backwards through blocks that are spaced by a snapshot window
+    // and filter out blocks before argv.skipBlock
     let blockNums = Array.from(
         { length: NUM_SNAPSHOTS },
         (x, i) => END_BLOCK - BLOCKS_PER_SNAPSHOT * i
-    );
+    ).filter((blockNum) => !(argv.skipBlock && blockNum >= argv.skipBlock));
 
+    const poolProgress = multibar.create(pools.length, 0, {
+        task: 'Pool Progress',
+    });
     for (let blockNum of blockNums) {
-        let shouldSkipBlock = argv.skipBlock && blockNum >= argv.skipBlock;
-        if (shouldSkipBlock) {
-            blockProgress.increment(1);
-            continue;
-        }
+        poolProgress.update(0, { task: `${blockNum} - Pools` });
 
-        let blockRewards = await getRewardsAtBlock(
+        const poolData = await getPoolDataAtBlock(
             web3,
             blockNum,
-            BAL_PER_SNAPSHOT,
             pools,
             prices,
             tokenDecimals,
             poolProgress
         );
+
+        const {
+            tokenTotalLiquidities,
+            finalPoolsWithBalMultiplier,
+        } = processPoolData(poolData);
+
+        const { userPools, userBalReceived } = sumUserLiquidity(
+            tokenTotalLiquidities,
+            finalPoolsWithBalMultiplier,
+            BAL_PER_SNAPSHOT
+        );
+
+        const blockRewards = [
+            userPools,
+            userBalReceived,
+            tokenTotalLiquidities,
+        ];
+
         writeBlockRewards(WEEK, blockNum, blockRewards);
+        poolProgress.stop();
         blockProgress.increment(1);
     }
 
-    poolProgress.stop();
     blockProgress.stop();
+    return;
 })();

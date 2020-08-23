@@ -164,15 +164,15 @@ function splitLiquidityProviders(
             (lp) => !shareholderBlacklist.has(lp)
         );
 
-        if (
-            shareHolderLiquidityProviders.length > 0 &&
-            nonshareholderLiquidityProviders.length > 0
-        ) {
-            return [
-                nonshareholderLiquidityProviders,
-                shareHolderLiquidityProviders,
-            ];
-        }
+        //if (
+        //shareHolderLiquidityProviders.length > 0 &&
+        //nonshareholderLiquidityProviders.length > 0
+        //) {
+        return [
+            nonshareholderLiquidityProviders,
+            shareHolderLiquidityProviders,
+        ];
+        //}
     }
     return [poolLiquidityProviders];
 }
@@ -344,7 +344,7 @@ export async function getPoolInvariantData(
 
 interface PoolVariantFactors {
     balAndRatioFactor: number;
-    originalPoolLiquidityFactor: number;
+    originalPoolLiquidityFactor: number; // measure of the adjusted liquidity of the pool
 }
 
 export function getPoolVariantData(
@@ -353,8 +353,9 @@ export function getPoolVariantData(
 ): PoolVariantFactors {
     const { liquidity, wrapFactor, feeFactor, tokens, normWeights } = poolData;
 
+    const tokenAddresses = tokens.map((t) => t.token);
     const balAndRatioFactor = getBalAndRatioFactor(
-        tokens,
+        tokenAddresses,
         normWeights,
         balMultiplier
     );
