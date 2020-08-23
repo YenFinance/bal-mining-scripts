@@ -24,7 +24,7 @@ describe('getPoolInvariantData', () => {
             mockPool
         );
         let firstPool = result.pools[0];
-        let expectedFeeFactor = 0.9999977500025312;
+        let expectedFeeFactor = 1;
         assert.deepEqual(
             firstPool.feeFactor.toNumber(),
             expectedFeeFactor,

@@ -33,8 +33,8 @@ describe('getBlockData', () => {
         );
         let userAddress = '0x59a068cc4540c8b8f8ff808ed37fae06584be019';
         let expectedUserPool = {
-            factorUSD: '11499.7241255916081672',
-            feeFactor: '0.9999977500025312',
+            factorUSD: '11499.75',
+            feeFactor: '1',
             pool: '0xfff29c8bce4fbe8702e9fa16e0e6c551f364f420',
             balAndRatioFactor: '1',
             valueUSD: '11499.75',
@@ -55,7 +55,7 @@ describe('getBlockData', () => {
 
         assert.deepEqual(
             result[2][tokenAddress].toNumber(),
-            22999.448251183218,
+            22999.5,
             'should return token total market caps'
         );
     });
