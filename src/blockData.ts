@@ -10,8 +10,8 @@ const { scale, bnum } = require('./utils');
 const { BLACKLISTED_SHAREHOLDERS } = require('./users');
 import { uncappedTokens, BAL_TOKEN } from './tokens';
 
-const TEMP_STAKING_BOOST = bnum(3);
-const MARKETCAP_CAP = bnum(10000000);
+const TEMP_BAL_MULTIPLIER = bnum(3);
+const DEFAULT_TOKEN_CAP = bnum(10000000);
 
 import { BigNumber } from 'bignumber.js';
 
@@ -28,15 +28,22 @@ interface TokenTotalLiquidities {
     [address: string]: BigNumber;
 }
 
-export function stakingBoost(
+export function getNewBalMultiplier(
     finalLiquidity,
     liquidityPreStaking,
     tempLiquidity,
-    tempStakingBoost = TEMP_STAKING_BOOST
+    tempBalMultiplier = TEMP_BAL_MULTIPLIER
 ) {
-    let desiredBoost = finalLiquidity.minus(liquidityPreStaking);
-    let tempLiquidityBoost = tempLiquidity.minus(liquidityPreStaking);
-    return desiredBoost.div(tempLiquidityBoost).times(tempStakingBoost);
+    let desiredLiquidityIncrease = finalLiquidity.minus(liquidityPreStaking);
+    let tempLiquidityIncrease = tempLiquidity.minus(liquidityPreStaking);
+
+    // edge case if the liquidity wasn't increased (no eligible pools)
+    if (tempLiquidityIncrease.toNumber() == 0) {
+        return tempBalMultiplier;
+    }
+    return desiredLiquidityIncrease
+        .div(tempLiquidityIncrease)
+        .times(tempBalMultiplier);
 }
 
 function addLiquidities(tokenTotalLiquidities, poolData) {
@@ -51,9 +58,9 @@ function addLiquidities(tokenTotalLiquidities, poolData) {
             .times(originalPoolLiquidityFactor);
 
         if (tokenTotalLiquidities[r.token]) {
-            tokenTotalLiquidities[r.token] = bnum(
-                tokenTotalLiquidities[r.token]
-            ).plus(tokenLiquidityWithCap);
+            tokenTotalLiquidities[r.token] = tokenTotalLiquidities[
+                r.token
+            ].plus(tokenLiquidityWithCap);
         } else {
             tokenTotalLiquidities[r.token] = tokenLiquidityWithCap;
         }
@@ -92,9 +99,7 @@ export async function getRewardsAtBlock(
 
     // Gather data on all eligible pools
     for (const pool of pools) {
-        const poolData:
-            | PoolDataResult
-            | SkipReason = await getPoolInvariantData(
+        const result: PoolDataResult | SkipReason = await getPoolInvariantData(
             web3,
             prices,
             tokenDecimals,
@@ -103,13 +108,16 @@ export async function getRewardsAtBlock(
         );
         // this should return one or two pools (Nonstaking or [Shareholder, Nonshareholder]
         poolProgress.increment(1);
+        let skipReason = result as SkipReason;
         if (
-            poolData.privatePool ||
-            poolData.unpriceable ||
-            poolData.notCreatedByBlock
+            skipReason.privatePool ||
+            skipReason.unpriceable ||
+            skipReason.notCreatedByBlock
         ) {
             continue;
         }
+
+        let poolData = result as PoolDataResult;
 
         allPoolData = allPoolData.concat(poolData.pools);
     }
@@ -135,8 +143,8 @@ export async function getRewardsAtBlock(
         tokenTotalLiquidities
     )) {
         let uncapped = uncappedTokens.includes(tokenAddress);
-        if (!uncapped && totalLiquidity > MARKETCAP_CAP) {
-            tokenLiquidityFactors[tokenAddress] = MARKETCAP_CAP.div(
+        if (!uncapped && totalLiquidity > DEFAULT_TOKEN_CAP) {
+            tokenLiquidityFactors[tokenAddress] = DEFAULT_TOKEN_CAP.div(
                 totalLiquidity
             );
         }
@@ -152,7 +160,7 @@ export async function getRewardsAtBlock(
     });
 
     let secondPassPoolsWithBalMultiplier = allPoolData.map((p) => {
-        let balMultiplier = p.canReceiveBoost ? TEMP_STAKING_BOOST : bnum(1.0);
+        let balMultiplier = p.canReceiveBoost ? TEMP_BAL_MULTIPLIER : bnum(1.0);
         const variantFactors = getPoolVariantData(p, balMultiplier);
         return { ...p, ...variantFactors };
     });
@@ -169,15 +177,15 @@ export async function getRewardsAtBlock(
         bnum(1).minus(bnum(45000).div(bnum(145000)))
     );
 
-    let newBalMultiplier = stakingBoost(
+    let newBalMultiplier = getNewBalMultiplier(
         targetFinalLiquidity,
         totalBalancerLiquidity,
         totalBalancerLiquidityTemp,
-        TEMP_STAKING_BOOST
+        TEMP_BAL_MULTIPLIER
     );
 
     //////////////////////////////////////////////////////////////////
-    // THIRD PASS
+    // FINAL PASS
     //////////////////////////////////////////////////////////////////
 
     let finalPassPoolsWithBalMultiplier = allPoolData.map((p) => {

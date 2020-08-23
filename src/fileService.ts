@@ -1,6 +1,6 @@
 import fs from 'fs';
 
-const writeData = (data, path) => {
+export const writeData = (data, path) => {
     try {
         fs.writeFileSync(
             `./reports/${path}.json`,

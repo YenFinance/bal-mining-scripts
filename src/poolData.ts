@@ -4,8 +4,7 @@ import { uncappedTokens, BAL_TOKEN } from './tokens';
 import { BLACKLISTED_SHAREHOLDERS } from './users';
 import BigNumber from 'bignumber.js';
 
-const MARKETCAP_CAP = bnum(10000000);
-const TEMP_STAKING_BOOST = bnum(3);
+const DEFAULT_TOKEN_CAP = bnum(10000000);
 
 const {
     getFeeFactor,
@@ -79,7 +78,7 @@ async function tokenMetrics(
 
         // may be null if no tokens have been added
         let tokenBalance = scale(tokenBalanceWei || 0, -bTokenDecimals);
-        let price = closestPrice(token, block.timestamp, prices);
+        let price = bnum(closestPrice(token, block.timestamp, prices));
 
         let origLiquidity = tokenBalance.times(price).dp(18);
 
@@ -154,7 +153,6 @@ function splitLiquidityProviders(
         false
     );
     const poolLiquidityProviders: string[] = pool.shareHolders;
-    //console.log("SHAREHOLDERS", pool.shareHolders)
 
     if (includesBal && includesUncappedTokenPair) {
         const shareholderBlacklist = new Set(BLACKLISTED_SHAREHOLDERS);
@@ -329,7 +327,7 @@ export async function getPoolInvariantData(
         }
 
         let hasShareholderPool: boolean =
-            subpoolLiquidityProviders[1].length > 1;
+            subpoolLiquidityProviders[1].length > 0;
         if (hasShareholderPool) {
             pools.push({
                 ...commonFactors,
@@ -346,7 +344,6 @@ export async function getPoolInvariantData(
 
 interface PoolVariantFactors {
     balAndRatioFactor: number;
-    liquidity: number;
     originalPoolLiquidityFactor: number;
 }
 
@@ -354,13 +351,7 @@ export function getPoolVariantData(
     poolData,
     balMultiplier
 ): PoolVariantFactors {
-    const {
-        originalPoolLiquidity,
-        wrapFactor,
-        feeFactor,
-        tokens,
-        normWeights,
-    } = poolData;
+    const { liquidity, wrapFactor, feeFactor, tokens, normWeights } = poolData;
 
     const balAndRatioFactor = getBalAndRatioFactor(
         tokens,
@@ -371,12 +362,11 @@ export function getPoolVariantData(
     const originalPoolLiquidityFactor = feeFactor
         .times(balAndRatioFactor)
         .times(wrapFactor)
-        .times(originalPoolLiquidity)
+        .times(liquidity)
         .dp(18);
 
     return {
         balAndRatioFactor,
-        liquidity: originalPoolLiquidity,
         originalPoolLiquidityFactor,
     };
 }
@@ -387,12 +377,12 @@ export function poolLiquidity(tokenTotalLiquiditys, tokens): BigNumber {
         const shouldAdjustLiquidity =
             !uncappedTokens.includes(t.token) &&
             bnum(tokenTotalLiquiditys[t.token] || 0).isGreaterThan(
-                MARKETCAP_CAP
+                DEFAULT_TOKEN_CAP
             );
         // if the token is capped then we scale it's adjusted market cap
         // down to the cap
         if (shouldAdjustLiquidity) {
-            let tokenLiquidityFactor = MARKETCAP_CAP.div(
+            let tokenLiquidityFactor = DEFAULT_TOKEN_CAP.div(
                 tokenTotalLiquiditys[t.token]
             );
             adjustedTokenLiquidity = t.origLiquidity
